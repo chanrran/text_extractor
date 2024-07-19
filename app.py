@@ -1,49 +1,48 @@
-import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import streamlit as st
+from collections import Counter
+import re
 
-# 데이터 로드
-data_path = 'Caselist_240718.csv'
-data = pd.read_csv(data_path)
+# 파일 업로드
+uploaded = st.file_uploader("파일을 업로드하세요", type=["xlsx"])
 
-# 사이드바 필터
-companies = st.sidebar.multiselect('회사 선택', data['회사'].unique(), default=data['회사'].unique())
-topics = st.sidebar.multiselect('주제 선택', data['주제'].unique(), default=data['주제'].unique())
-levels = st.sidebar.multiselect('난이도 선택', data['난이도'].unique(), default=data['난이도'].unique())
+if uploaded is not None:
+    # 엑셀 파일 로드
+    df = pd.read_excel(uploaded)
 
-# 필터 적용
-filtered_data = data[data['회사'].isin(companies) & data['주제'].isin(topics) & data['난이도'].isin(levels)]
+    # 데이터프레임 열 이름 출력
+    st.write("엑셀 파일의 열 이름:", df.columns.tolist())
 
-# 메인 화면
-st.title('프로젝트 대시보드')
+    # 필요한 열이 있는지 확인
+    if 'Company' in df.columns and 'Title' in df.columns and 'Category' in df.columns and 'Level' in df.columns:
+        # 회사별 건수
+        company_counts = df['Company'].value_counts()
 
-# 그래프 생성 함수
-def create_bar_chart(counts, title, xlabel, ylabel):
-    counts = counts.sort_values(ascending=True)  # 내림차순 정렬
-    fig, ax = plt.subplots()
-    counts.plot(kind='barh', ax=ax)
-    ax.set_title(title)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    for container in ax.containers:
-        ax.bar_label(container, label_type='edge')
-    st.pyplot(fig)
+        # 수준별 건수
+        level_counts = df['Level'].value_counts()
 
-# 회사별 프로젝트 수
-st.header('회사별 프로젝트 수')
-company_counts = filtered_data['회사'].value_counts()
-create_bar_chart(company_counts, '회사별 프로젝트 수', '프로젝트 수', '회사')
+        # 키워드 추출 함수
+        def extract_keywords(text):
+            words = re.findall(r'\b\w+\b', str(text))
+            return words
 
-# 주제별 프로젝트 수
-st.header('주제별 프로젝트 수')
-topic_counts = filtered_data['주제'].value_counts()
-create_bar_chart(topic_counts, '주제별 프로젝트 수', '프로젝트 수', '주제')
+        # 모든 카테고리에서 키워드 추출
+        keywords = df['Category'].apply(extract_keywords).sum()
+        keyword_counts = Counter(keywords)
 
-# 난이도별 프로젝트 수
-st.header('난이도별 프로젝트 수')
-level_counts = filtered_data['난이도'].value_counts()
-create_bar_chart(level_counts, '난이도별 프로젝트 수', '프로젝트 수', '난이도')
+        # 상위 10개 키워드
+        top_keywords = keyword_counts.most_common(10)
 
-# 필터된 프로젝트 목록
-st.header('프로젝트 목록')
-st.write(filtered_data)
+        # Streamlit 대시보드
+        st.title('데이터 분석 대시보드')
+
+        st.subheader('회사별 건수')
+        st.bar_chart(company_counts)
+
+        st.subheader('수준별 건수')
+        st.bar_chart(level_counts)
+
+        st.subheader('카테고리별 키워드 분석')
+        st.write(pd.DataFrame(top_keywords, columns=['키워드', '빈도수']))
+    else:
+        st.error("엑셀 파일에 필요한 열(Company, Title, Category, Level)이 없습니다.")
