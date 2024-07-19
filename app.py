@@ -1,48 +1,52 @@
-import pandas as pd
 import streamlit as st
-from collections import Counter
-import re
+import requests
+from bs4 import BeautifulSoup
+import zipfile
+import os
+from io import BytesIO
 
-# 파일 업로드
-uploaded = st.file_uploader("파일을 업로드하세요", type=["xlsx"])
+# Streamlit 페이지 설정
+st.title("URL Text Extractor")
+st.write("Please enter a list of URLs (one per line, up to 300 URLs):")
 
-if uploaded is not None:
-    # 엑셀 파일 로드
-    df = pd.read_excel(uploaded)
+# 입력창
+urls = st.text_area("Enter URLs", height=300)
+url_list = urls.split()
 
-    # 데이터프레임 열 이름 출력
-    st.write("엑셀 파일의 열 이름:", df.columns.tolist())
-
-    # 필요한 열이 있는지 확인
-    if 'Company' in df.columns and 'Title' in df.columns and 'Category' in df.columns and 'Level' in df.columns:
-        # 회사별 건수
-        company_counts = df['Company'].value_counts()
-
-        # 수준별 건수
-        level_counts = df['Level'].value_counts()
-
-        # 키워드 추출 함수
-        def extract_keywords(text):
-            words = re.findall(r'\b\w+\b', str(text))
-            return words
-
-        # 모든 카테고리에서 키워드 추출
-        keywords = df['Category'].apply(extract_keywords).sum()
-        keyword_counts = Counter(keywords)
-
-        # 상위 10개 키워드
-        top_keywords = keyword_counts.most_common(10)
-
-        # Streamlit 대시보드
-        st.title('데이터 분석 대시보드')
-
-        st.subheader('회사별 건수')
-        st.bar_chart(company_counts)
-
-        st.subheader('수준별 건수')
-        st.bar_chart(level_counts)
-
-        st.subheader('카테고리별 키워드 분석')
-        st.write(pd.DataFrame(top_keywords, columns=['키워드', '빈도수']))
+if st.button("Extract Texts and Download"):
+    if len(url_list) > 300:
+        st.error("Please enter no more than 300 URLs.")
     else:
-        st.error("엑셀 파일에 필요한 열(Company, Title, Category, Level)이 없습니다.")
+        # 폴더 생성
+        if not os.path.exists('texts'):
+            os.makedirs('texts')
+
+        # 각 URL 처리
+        for index, url in enumerate(url_list):
+            try:
+                response = requests.get(url)
+                soup = BeautifulSoup(response.text, 'html.parser')
+
+                # 파일 저장
+                with open(f'texts/{index+1}.txt', 'w', encoding='utf-8') as file:
+                    file.write(soup.get_text())
+            except Exception as e:
+                st.error(f"Failed to process {url}: {str(e)}")
+
+        # 압축 파일 생성
+        with BytesIO() as bio:
+            with zipfile.ZipFile(bio, 'w') as zipf:
+                for filename in os.listdir('texts'):
+                    zipf.write(f'texts/{filename}', filename)
+            bio.seek(0)
+            
+            # 다운로드 링크 제공
+            st.download_button(label="Download ZIP File",
+                               data=bio,
+                               file_name="extracted_texts.zip",
+                               mime="application/zip")
+
+        # 임시 파일 삭제
+        for filename in os.listdir('texts'):
+            os.remove(f'texts/{filename}')
+        os.rmdir('texts')
