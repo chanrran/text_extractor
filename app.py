@@ -2,51 +2,53 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import zipfile
+import io
 import os
-from io import BytesIO
 
-# Streamlit 페이지 설정
-st.title("URL Text Extractor")
-st.write("Please enter a list of URLs (one per line, up to 300 URLs):")
+def extract_text_from_url(url):
+    try:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        return soup.get_text()
+    except Exception as e:
+        return f"Error extracting text from {url}: {str(e)}"
 
-# 입력창
-urls = st.text_area("Enter URLs", height=300)
-url_list = urls.split()
+def main():
+    st.title("URL Text Extractor")
+    
+    # User input for URLs
+    urls_input = st.text_area("붙여넣기 할 URL들을 입력하세요 (한 줄에 하나씩, 최대 300개):", height=200)
+    urls = urls_input.split('\n')
+    
+    # Limit to 300 URLs
+    urls = [url.strip() for url in urls if url.strip()][:300]
+    
+    if st.button("텍스트 추출 및 압축파일 생성"):
+        if not urls:
+            st.warning("URL을 입력해주세요.")
+            return
+        
+        # Create a BytesIO object to store the zip file
+        zip_buffer = io.BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for i, url in enumerate(urls):
+                text = extract_text_from_url(url)
+                filename = f"text_{i+1}.txt"
+                zip_file.writestr(filename, text)
+        
+        # Set the buffer's position to the beginning
+        zip_buffer.seek(0)
+        
+        # Create a download button for the zip file
+        st.download_button(
+            label="압축파일 다운로드",
+            data=zip_buffer,
+            file_name="extracted_texts.zip",
+            mime="application/zip"
+        )
+        
+        st.success("텍스트 추출 및 압축이 완료되었습니다. 위의 버튼을 클릭하여 다운로드하세요.")
 
-if st.button("Extract Texts and Download"):
-    if len(url_list) > 300:
-        st.error("Please enter no more than 300 URLs.")
-    else:
-        # 폴더 생성
-        if not os.path.exists('texts'):
-            os.makedirs('texts')
-
-        # 각 URL 처리
-        for index, url in enumerate(url_list):
-            try:
-                response = requests.get(url)
-                soup = BeautifulSoup(response.text, 'html.parser')
-
-                # 파일 저장
-                with open(f'texts/{index+1}.txt', 'w', encoding='utf-8') as file:
-                    file.write(soup.get_text())
-            except Exception as e:
-                st.error(f"Failed to process {url}: {str(e)}")
-
-        # 압축 파일 생성
-        with BytesIO() as bio:
-            with zipfile.ZipFile(bio, 'w') as zipf:
-                for filename in os.listdir('texts'):
-                    zipf.write(f'texts/{filename}', filename)
-            bio.seek(0)
-            
-            # 다운로드 링크 제공
-            st.download_button(label="Download ZIP File",
-                               data=bio,
-                               file_name="extracted_texts.zip",
-                               mime="application/zip")
-
-        # 임시 파일 삭제
-        for filename in os.listdir('texts'):
-            os.remove(f'texts/{filename}')
-        os.rmdir('texts')
+if __name__ == "__main__":
+    main()
